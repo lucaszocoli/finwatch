@@ -101,3 +101,6 @@ kafka-logs/
 *.tfstate
 *.tfstate.*
 .terraform/
+
+collection/
+scripts/

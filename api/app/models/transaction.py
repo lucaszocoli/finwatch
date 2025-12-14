@@ -10,12 +10,11 @@ class Transaction(Base):
     transaction_id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
     amount = Column(DECIMAL(12, 2), nullable=False)
-    type = Column(String(30), nullable=False)  # deposit, withdraw, transfer, payment
-    status = Column(
-        String(20), nullable=False, default="completed"
-    )  # completed, failed
+    type = Column(String(30), nullable=False)
+    status = Column(String(20), nullable=False, default="completed")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    location = Column(String(255), nullable=True)
+    latitude = Column(DECIMAL(10, 8), nullable=True)
+    longitude = Column(DECIMAL(11, 8), nullable=True)
     device_info = Column(String(255), nullable=True)
     is_flagged = Column(Boolean, default=False)
     is_analyzed = Column(Boolean, default=False)

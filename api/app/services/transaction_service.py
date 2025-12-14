@@ -29,7 +29,7 @@ class TransactionService:
             Transaction: The created transaction
 
         Raises:
-            ValueError: If user is not found or is inactive
+            ValueError: If user is not found, is inactive, or has insufficient balance
         """
         logger.info(f"Creating transaction for user {transaction_data.user_id}")
 
@@ -46,25 +46,47 @@ class TransactionService:
             )
             raise ValueError("Usuário inativo")
 
+        if transaction_data.type in ['withdraw', 'payment', 'transfer']:
+            if user.balance < transaction_data.amount:
+                logger.warning(
+                    f"Transaction creation failed - Insufficient balance: User {transaction_data.user_id}, "
+                    f"Balance: {user.balance}, Required: {transaction_data.amount}"
+                )
+                raise ValueError(f"Saldo insuficiente. Saldo atual: R$ {user.balance}")
+
         logger.debug(
-            f"Creating transaction: amount={transaction_data.amount}, type={transaction_data.type}, location={transaction_data.location}"
+            f"Creating transaction: amount={transaction_data.amount}, type={transaction_data.type}, "
+            f"location=({transaction_data.latitude}, {transaction_data.longitude})"
         )
 
         db_transaction = Transaction(
             user_id=transaction_data.user_id,
             amount=transaction_data.amount,
             type=transaction_data.type,
-            location=transaction_data.location,
+            latitude=transaction_data.latitude,
+            longitude=transaction_data.longitude,
             device_info=transaction_data.device_info,
         )
 
         try:
             self.db.add(db_transaction)
+            
+            if db_transaction.status == 'completed':
+                if transaction_data.type == 'deposit':
+                    user.balance += transaction_data.amount
+                    logger.debug(f"User balance increased: {user.balance}")
+                elif transaction_data.type in ['withdraw', 'payment', 'transfer']:
+                    user.balance -= transaction_data.amount
+                    logger.debug(f"User balance decreased: {user.balance}")
+            
             self.db.commit()
             self.db.refresh(db_transaction)
+            self.db.refresh(user)
 
             logger.info(
-                f"Transaction created successfully - ID: {db_transaction.transaction_id}, User: {transaction_data.user_id}, Amount: {transaction_data.amount}"
+                f"Transaction created successfully - ID: {db_transaction.transaction_id}, "
+                f"User: {transaction_data.user_id}, Amount: {transaction_data.amount}, "
+                f"New Balance: {user.balance}"
             )
 
             await self._update_user_stats(transaction_data.user_id, transaction_data.amount)

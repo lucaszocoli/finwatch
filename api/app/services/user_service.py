@@ -1,10 +1,14 @@
 from typing import List, Optional
 from sqlalchemy.orm import Session, joinedload
-
+from decimal import Decimal
 from app.models.user import User
 from app.models.fraud_alert import UserStats
 from app.schemas.user import UserCreate, UserUpdate, UserWithTransactions
 from app.core.logging_config import get_logger
+from app.services.geocoding_service import GeocodingService
+from app.core.redis_client import get_redis
+
+import random
 
 logger = get_logger("users")
 
@@ -35,13 +39,50 @@ class UserService:
             raise ValueError("Email já está em uso")
 
         try:
-            db_user = User(name=user_data.name, email=user_data.email)
+            initial_balance = user_data.initial_balance
+            if initial_balance is None:
+                initial_balance = Decimal(random.uniform(1000, 50000)).quantize(Decimal('0.01'))
+            
+            latitude = None
+            longitude = None
+            
+            if user_data.city:
+                try:
+                    redis_client = get_redis()
+                    geocoding_service = GeocodingService(redis_client)
+                    latitude, longitude = geocoding_service.geocode_address(
+                        city=user_data.city,
+                        state=user_data.state,
+                        country=user_data.country or "Brazil"
+                    )
+                    
+                    if latitude and longitude:
+                        logger.info(
+                            f"Geocoded {user_data.city}, {user_data.state}: "
+                            f"({latitude}, {longitude})"
+                        )
+                except Exception as e:
+                    logger.warning(f"Geocoding failed for user {user_data.email}: {e}")
+            
+            db_user = User(
+                name=user_data.name,
+                email=user_data.email,
+                city=user_data.city,
+                state=user_data.state,
+                country=user_data.country or "Brazil",
+                latitude=latitude,
+                longitude=longitude,
+                initial_balance=initial_balance,
+                balance=initial_balance
+            )
             self.db.add(db_user)
             self.db.commit()
             self.db.refresh(db_user)
 
             logger.info(
-                f"User created successfully - ID: {db_user.user_id}, Email: {user_data.email}"
+                f"User created successfully - ID: {db_user.user_id}, "
+                f"Email: {user_data.email}, Initial Balance: {initial_balance}, "
+                f"Location: {user_data.city}, {user_data.state}"
             )
 
             user_stats = UserStats(user_id=db_user.user_id)
